@@ -44,8 +44,11 @@ function AvailabilityScreen({ checking = false }: AvailabilityScreenProps) {
   );
 }
 
+let offlineShellRegistrationStarted = false;
+
 function registerOfflineShell(): void {
-  if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  if (!offlineShellRegistrationStarted && "serviceWorker" in navigator && import.meta.env.PROD) {
+    offlineShellRegistrationStarted = true;
     navigator.serviceWorker
       .register(`${import.meta.env.BASE_URL}sw.js?v=online-gated-1`)
       .catch(() => undefined);
@@ -70,18 +73,7 @@ async function isTestVersionAvailable(): Promise<boolean> {
   }
 }
 
-async function startApplication(): Promise<void> {
-  if (requiresOnlineAvailability) {
-    root.render(<AvailabilityScreen checking />);
-
-    if (!(await isTestVersionAvailable())) {
-      root.render(<AvailabilityScreen />);
-      return;
-    }
-
-    registerOfflineShell();
-  }
-
+function renderApplication(): void {
   root.render(
     <StrictMode>
       <App />
@@ -89,4 +81,47 @@ async function startApplication(): Promise<void> {
   );
 }
 
-void startApplication();
+let availabilityCheckSequence = 0;
+
+async function enforceTestAvailability(): Promise<void> {
+  const checkSequence = ++availabilityCheckSequence;
+
+  if (!navigator.onLine) {
+    root.render(<AvailabilityScreen />);
+    return;
+  }
+
+  root.render(<AvailabilityScreen checking />);
+
+  const isAvailable = await isTestVersionAvailable();
+
+  if (checkSequence !== availabilityCheckSequence) {
+    return;
+  }
+
+  if (isAvailable) {
+    registerOfflineShell();
+    renderApplication();
+  } else {
+    root.render(<AvailabilityScreen />);
+  }
+}
+
+function blockUnavailableApplication(): void {
+  availabilityCheckSequence += 1;
+  root.render(<AvailabilityScreen />);
+}
+
+if (requiresOnlineAvailability) {
+  window.addEventListener("offline", blockUnavailableApplication);
+  window.addEventListener("online", () => void enforceTestAvailability());
+  window.addEventListener("pageshow", () => void enforceTestAvailability());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void enforceTestAvailability();
+    }
+  });
+  void enforceTestAvailability();
+} else {
+  renderApplication();
+}
