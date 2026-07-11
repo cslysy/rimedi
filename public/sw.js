@@ -1,4 +1,4 @@
-const CACHE_NAME = "rimedi-v6";
+const CACHE_NAME = "rimedi-v7";
 const BASE_URL = new URL("./", self.location.href);
 const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icons/icon.svg"].map(
   (path) => new URL(path, BASE_URL).href
@@ -25,6 +25,21 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(OFFLINE_URL, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(OFFLINE_URL))
+    );
     return;
   }
 
